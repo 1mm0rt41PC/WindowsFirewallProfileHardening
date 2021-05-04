@@ -6,14 +6,7 @@ $_CONF_ALLOWED_THUMBPRINT = @(
 	'D1C2373A92889FDFEA795EF9DE00BFE8650586B5',
 	''# DO NOT REMOVE
 )
-# REMOVE THIS TEST IN PROD
-if( $env:USERDNSDOMAIN.ToUpper() -ne $_CONF_DNS_SUFFIX.ToUpper() ){
-	Write-Host "%USERDNSDOMAIN% is not the same as the DHCP suffix. Is it normal ? Expecting identical value !!!!!!"
-}
-
-
-
-
+#############################################################################
 
 
 function Get-RemoteSslCertificate
@@ -68,25 +61,40 @@ function isValidDomainCertificate( $domainIP=$_CONF_DNS_SUFFIX )
 	$rootCA = $chain.ChainElements[$chain.ChainElements.Count-1]
 	$rootCA = $rootCA.Certificate.Thumbprint.ToUpper()
 	if( -not $_CONF_ALLOWED_THUMBPRINT.Contains($rootCA) ){
-		Write-Host "Possible Attack !!! Invalid rootCA >$rootCA<"
+		Write-Host "[!] Possible Attack !!! Invalid rootCA >$rootCA<"
+		Write-Host "[!] If your are sure of your network, add $rootCA into the variable `$_CONF_ALLOWED_THUMBPRINT"
 		return $false
 	}
 	return $true
 }
 
-function checkDomainStatus
-{
+
+function checkDomainStatus {
 	try {
-		Get-NetConnectionProfile -NetworkCategory Private | Set-NetConnectionProfile -NetworkCategory Public
+		$_CONF_DNS_SUFFIX = $_CONF_DNS_SUFFIX.ToUpper()
+		Get-NetConnectionProfile -NetworkCategory Private -ErrorAction SilentlyContinue | Set-NetConnectionProfile -NetworkCategory Public
+		$cert = isValidDomainCertificate
 		Get-NetConnectionProfile -NetworkCategory DomainAuthenticated -ErrorAction SilentlyContinue | foreach {
-			$suffix = ($_ | Get-DnsClient).ConnectionSpecificSuffix
-			if( $suffix -ne $_CONF_DNS_SUFFIX -or (-not isValidDomainCertificate) ){
+			$suffix = ($_ | Get-DnsClient).ConnectionSpecificSuffix.ToUpper()
+			if( ($suffix -eq $_CONF_DNS_SUFFIX) -and $cert ){
+				Write-Host ("[*] Valid connection to the internal network has been detected on the interface >"+($_.Name)+"<")
+			}else{
 				$_ | Set-NetConnectionProfile -NetworkCategory Public
+				Write-Host ("[!] HACKED detected !!!! Fake connection to the internal network has been detected on the interface >"+($_.Name)+"<")
+				Write-Host ("[!] Suffix: "+$suffix)
+				Write-Host ("[!] Suffix-test: "+($suffix -eq $_CONF_DNS_SUFFIX))
+				Write-Host ("[!] Suffix-Expected: "+$_CONF_DNS_SUFFIX)
+				Write-Host ("[!] isValidDomainCertificate: "+(isValidDomainCertificate))
 			}
 		}
-	}	
+	}catch{}
 }
 
+
+
+if( $env:USERDNSDOMAIN.ToUpper() -ne $_CONF_DNS_SUFFIX.ToUpper() ){
+	Write-Host "[!] %USERDNSDOMAIN% is not the same as the DHCP suffix. Is it normal ? Expecting identical value !!!!!!"
+}
 
 # Event detector
 $networkChange = [System.Net.NetworkInformation.NetworkChange]
@@ -95,9 +103,8 @@ Register-ObjectEvent -InputObject $networkChange -EventName NetworkAddressChange
 	checkDomainStatus
 } > $null;
 
-# Recheck network status every 1minute
-$timer = New-Object System.Timers.Timer -Property @{ Interval=60000; AutoReset=$false };
-Register-ObjectEvent $timer -EventName Elapsed -SourceIdentifier ADGWM_Timer -Action {
-	write-host "Checking network activity..."
+while($true)
+{
 	checkDomainStatus
-} > $null;
+	Sleep 60000
+}
