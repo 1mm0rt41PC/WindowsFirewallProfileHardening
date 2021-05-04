@@ -79,15 +79,18 @@ function checkDomainStatus {
 			if( ($suffix -eq $_CONF_DNS_SUFFIX) -and $cert ){
 				Write-Host ("[*] Valid connection to the internal network has been detected on the interface >"+($_.Name)+"<")
 			}else{
-				$_ | Set-NetConnectionProfile -NetworkCategory Public
+				Get-NetConnectionProfile -NetworkCategory DomainAuthenticated -ErrorAction SilentlyContinue | Set-NetConnectionProfile -NetworkCategory Public
 				Write-Host ("[!] HACKED detected !!!! Fake connection to the internal network has been detected on the interface >"+($_.Name)+"<")
 				Write-Host ("[!] Suffix: "+$suffix)
 				Write-Host ("[!] Suffix-test: "+($suffix -eq $_CONF_DNS_SUFFIX))
 				Write-Host ("[!] Suffix-Expected: "+$_CONF_DNS_SUFFIX)
-				Write-Host ("[!] isValidDomainCertificate: "+(isValidDomainCertificate))
+				Write-Host ("[!] isValidDomainCertificate: "+$cert)
 			}
 		}
-	}catch{}
+	}catch [Exception]{
+	  Write-Error $_.Exception.GetType().FullName, $_.Exception.Message
+	  Write-Error $_.Exception | format-list -force *
+	}
 }
 
 
