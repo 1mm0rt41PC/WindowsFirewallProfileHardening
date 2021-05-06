@@ -2,10 +2,14 @@
 $_CONF_DNS_SUFFIX = '1mm0rt41.lab.local'
 
 $_CONF_TIME_OUT = 2000# Milli-seconds
-$_CONF_ALLOWED_THUMBPRINT = @(
-	'D1C2373A92889FDFEA795EF9DE00BFE8650586B5',
-	''# DO NOT REMOVE
-)
+# List of thumprint or file to the list of thumprint
+$_CONF_ALLOWED_THUMBPRINT = 'C:\Windows\AutoHarden\AD_THUMBPRINT.list'
+# OR
+#$_CONF_ALLOWED_THUMBPRINT = @(
+#	'D1C2373A92889FDFEA795EF9DE00BFE8650586B5',
+#	''# DO NOT REMOVE
+#)
+
 #############################################################################
 
 
@@ -97,6 +101,24 @@ function checkDomainStatus {
 
 if( $env:USERDNSDOMAIN.ToUpper() -ne $_CONF_DNS_SUFFIX.ToUpper() ){
 	Write-Host "[!] %USERDNSDOMAIN% is not the same as the DHCP suffix. Is it normal ? Expecting identical value !!!!!!"
+}
+
+# Detect if $_CONF_ALLOWED_THUMBPRINT is a fil with a list of thumbprint
+if( [System.IO.File]::Exists($_CONF_ALLOWED_THUMBPRINT) -or $_CONF_ALLOWED_THUMBPRINT.StartsWith('C:\') ){
+	$tmp = (cat $_CONF_ALLOWED_THUMBPRINT -ErrorAction SilentlyContinue)
+	if(($tmp -ne $null) -and ($tmp -ne "")) {
+		$_CONF_ALLOWED_THUMBPRINT = $tmp.Replace("`r",'').Split("`n")
+	}else{
+		# If $_CONF_ALLOWED_THUMBPRINT is empty => we need to get the current thumbprint
+		$cert = Get-RemoteSslCertificate $_CONF_DNS_SUFFIX 636
+		$chain = New-Object -TypeName System.Security.Cryptography.X509Certificates.X509Chain
+		$chain.Build($cert) | out-null
+		$rootCA = $chain.ChainElements[$chain.ChainElements.Count-1]
+		$rootCA = $rootCA.Certificate.Thumbprint.ToUpper()
+		$rootCA | Out-File -Append $_CONF_ALLOWED_THUMBPRINT -Encoding ascii
+		$_CONF_ALLOWED_THUMBPRINT = @($rootCA)
+		Write-Host "[*] First run, whitelisting the certificate $rootCA"
+	}
 }
 
 # Event detector
